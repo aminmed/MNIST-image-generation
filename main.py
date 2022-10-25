@@ -4,7 +4,7 @@ import tensorflow_datasets as tfds
 import numpy as np
 import matplotlib.pyplot as plt 
 
-from CVAE import *
+from models.VanillaVAE import *
 
 
 
@@ -25,10 +25,13 @@ def main():
     X = np.concatenate([x_train, x_test], axis = 0)
     X = np.expand_dims(X,-1).astype('float32') / 255
 
-    vae = CVAE(input_shape=(28,28,1), latent_dim=latent_dim)
-    vae.compile(optimizer=keras.optimizers.Adam(), run_eagerly=True)
-    vae.fit(X, epochs=20, batch_size=batch_size)
+    vae = VanillaVAE(input_shape=(28,28,1),hidden_dims=[32,64], latent_dim=latent_dim)
     
+    vae.compile(optimizer=keras.optimizers.Adam(), run_eagerly=True)
+
+  
+    vae.fit(X, epochs=20, batch_size=batch_size)
+    print(vae.summary())
     n = 30
     digit_size = 28
     figure = np.zeros((digit_size * n, digit_size * n))
