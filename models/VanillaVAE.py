@@ -137,9 +137,7 @@ class VanillaVAE(baseVAE) :
 
   def loss_function(self, inputs: Any, **kwargs):
       
-      z_mean, z_log_var = self.encode(inputs)
-      z = self.reparametrize(z_mean, z_log_var)
-      reconstruction = self.decode(z)
+      reconstruction, z_mean, z_log_var = self(inputs)
 
       reconstruction_loss = tf.reduce_mean(
           tf.reduce_sum( tf.keras.losses.binary_crossentropy(inputs, reconstruction),axis = (1,2))
@@ -154,7 +152,7 @@ class VanillaVAE(baseVAE) :
      
     z = tf.keras.backend.random_normal(shape = (num_samples, self.latent_dim))
     samples = self.decode(z)
-    return samples
+    return samples.numpy()
 
   def generate(self, x: tf.Tensor, **kwargs) -> tf.Tensor:
     return self.call(x)[0]
