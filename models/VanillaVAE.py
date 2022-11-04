@@ -33,6 +33,7 @@ class VanillaVAE(baseVAE) :
     modules = []
 
     for hidden_dim in hidden_dims : 
+      
       modules.append(
         tf.keras.Sequential(
           layers = [
@@ -59,15 +60,16 @@ class VanillaVAE(baseVAE) :
     self.mean_out = layers.Dense(units=self.latent_dim, activation='relu')
     self.var_out = layers.Dense(units=self.latent_dim, activation='relu')
 
-    last_layer_col = int(self.W/ (2**len(self.hidden_dims)))
-    
+    self.last_layer_encoder_w = int(self.W/ (2**len(self.hidden_dims)))
+
     #decoder network 
-    self.decoder_input = layers.Dense(units=self.hidden_dims[-1]*(last_layer_col**2))
+
+    self.decoder_input = layers.Dense(units=self.hidden_dims[-1]*(self.last_layer_encoder_w**2))
 
     hidden_dims.reverse()
     modules = []
 
-    for h in range(len(hidden_dims)-1) : 
+    for h in range(len(hidden_dims)) : 
       modules.append(
         tf.keras.Sequential(
           layers = [
@@ -75,17 +77,16 @@ class VanillaVAE(baseVAE) :
             layers.BatchNormalization(),
             layers.LeakyReLU()
           ],
-          name = 'decoder_module_'+ str(hidden_dim)
+          name = 'decoder_module_'+ str(hidden_dims[h])
         )
       )
 
+
+    kernel_out_decoder = (1,5)[len(self.hidden_dims)>2]
     modules.append(
       tf.keras.Sequential(
         layers = [
-          layers.Conv2DTranspose(filters=hidden_dims[-1], kernel_size=3, strides=2, padding='same'), 
-          layers.BatchNormalization(),
-          layers.LeakyReLU(),
-          layers.Conv2DTranspose(filters=input_shape[2], kernel_size=3, strides=1,padding="same", activation="sigmoid")
+          layers.Conv2DTranspose(filters=input_shape[2], kernel_size= kernel_out_decoder, strides=1, padding='valid', activation="sigmoid")
         ]
       )
     )   
@@ -102,7 +103,7 @@ class VanillaVAE(baseVAE) :
 
   def decode(self , z : tf.Tensor) -> Any: 
     
-    w = int(self.W/ (2**len(self.hidden_dims)))
+    w = self.last_layer_encoder_w
 
     x = self.decoder_input(z)
     # reshape the decoder input to match the shape of input to conv2transpose

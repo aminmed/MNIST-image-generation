@@ -25,11 +25,14 @@ def main():
     X = np.concatenate([x_train], axis = 0)
     X = np.expand_dims(X,-1).astype('float32') / 255
 
-    vae = VanillaVAE(input_shape=(28,28,1),hidden_dims=[32,64], latent_dim=latent_dim)
+    vae = VanillaVAE(input_shape=(28,28,1),hidden_dims=[32,64,512], latent_dim=latent_dim)
     
     vae.compile(optimizer=keras.optimizers.Adam(), run_eagerly=True)
 
-  
+    x_ = tf.random.normal((16, 28, 28, 1))
+    vae(x_) 
+    print(vae.decoder.summary())
+    print(vae.encoder.summary())
     vae.fit(X, epochs=30, batch_size=batch_size)
 
     
