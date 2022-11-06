@@ -87,6 +87,8 @@ class ResidualBlock(layers.Layer) :
     def call(self, inputs, **kwargs):
         return inputs + self.resblock(inputs)
 
+
+
 class VQVAE(baseVAE): 
     
     def __init__(self,
