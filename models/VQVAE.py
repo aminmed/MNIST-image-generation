@@ -65,12 +65,27 @@ class VectorQuantizer(layers.Layer):
 
 class ResidualBlock(layers.Layer) : 
 
-    def __init__(self, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
-        super().__init__(trainable, name, dtype, dynamic, **kwargs)
+    def __init__(self,input_shape,filters, name = '', **kwargs):
+        super(ResidualBlock, self).__init__(**kwargs)
 
+        self.resblock=tf.keras.Sequential(
+            layers = [
+                layers.Conv2D(filters=filters, 
+                              kernel_size=3,padding='same',
+                              input_shape = input_shape,
+                              use_bias=False), 
+                layers.ReLU(True),
+                layers.Conv2D(filters=filters, 
+                              kernel_size=3,
+                              padding='same',
+                              use_bias=False)
 
-    def call(self, *args, **kwargs):
-        return super().call(*args, **kwargs)
+            ],
+            name = name
+        )
+
+    def call(self, inputs, **kwargs):
+        return inputs + self.resblock(inputs)
 
 class VQVAE(baseVAE): 
     
