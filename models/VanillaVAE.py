@@ -11,18 +11,14 @@ class VanillaVAE(baseVAE) :
                input_shape : Tuple,
                hidden_dims : List,
                latent_dim : int,
+               
                **kwargs ) -> None:
 
     super(VanillaVAE, self).__init__()
 
     self.latent_dim = latent_dim
 
-    if input_shape is None : 
-      input_shape = (28,28,1)
-    
-    if hidden_dims is None : 
-      hidden_dims = [32, 64]
-    
+
     self.H, self.W,  self.C  = input_shape
     self.hidden_dims = deepcopy(hidden_dims)
     self.total_loss_tracker = tf.keras.metrics.Mean(name = 'total_loss')
@@ -93,7 +89,7 @@ class VanillaVAE(baseVAE) :
 
     self.decoder = tf.keras.Sequential(layers = modules, name = 'decoder')  
 
-  def encode(self, input : tf.Tensor)-> List[tf.Tensor]:
+  def encode(self, input : tf.Tensor)-> Tuple[tf.Tensor]:
       
     x = self.encoder(input)
     mu , var = self.mean_out(x), self.var_out(x)
