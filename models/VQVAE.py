@@ -18,10 +18,10 @@ class VectorQuantizer(layers.Layer):
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
-        embedding_shape = [embedding_dim, num_embeddings]
-        initializer = tf.keras.initializers.VarianceScaling(distribution='uniform')
+        embedding_shape = (embedding_dim, num_embeddings) 
+        initializer = tf.random_uniform_initializer()
         self.embeddings = tf.Variable(
-            initializer(embedding_shape, tf.float32), 
+            initial_value = initializer(shape= embedding_shape, dtype = tf.float32), 
             trainable=True,
             name="embeddings")
 
@@ -36,7 +36,7 @@ class VectorQuantizer(layers.Layer):
         inputs_sqr = tf.reduce_sum(flattened_z_latents**2, 1, keepdims=True)
         
         distances = ( # (z(x) - embeddings)^2 
-                inputs_sqr-2 * tf.matmul(flattened_z_latents, self.embeddings)\
+                inputs_sqr- 2 * tf.matmul(flattened_z_latents, self.embeddings)\
                 +embedding_sqr
             )  
         
@@ -61,6 +61,20 @@ class VectorQuantizer(layers.Layer):
         quantized_latents = z_latents + tf.stop_gradient(quantized_latents - z_latents)
         
         return quantized_latents, vq_loss
+    
+    def get_codebook_indices(self, flattened_inputs):
+        
+        embedding_sqr = tf.reduce_sum(self.embeddings**2, 0, keepdims=True)
+        inputs_sqr    = tf.reduce_sum(flattened_inputs**2, 1, keepdims=True)
+        
+        distances = ( # (z(x) - embeddings)^2 
+                inputs_sqr-2 * tf.matmul(flattened_inputs, self.embeddings)\
+                +embedding_sqr
+            )  
+        
+        encoding_indices = tf.argmax(-distances, axis=1)
+
+        return encoding_indices
 
 
 class ResidualBlock(layers.Layer) : 
@@ -94,16 +108,14 @@ class VQVAE(baseVAE):
                  input_shape : Tuple,
                  hidden_dims : List,
                  latent_dim : int,
-                 embeddings_num : int,
+                 num_embeddings : int,
                  commitement_cost : float, 
-                 beta : float, 
                **kwargs ) -> None:
         super(VQVAE, self).__init__()
 
-        self.beta = beta 
         self.latent_dim = latent_dim   # same as embedding dimension
         self.hidden_dims = deepcopy(hidden_dims)
-        self.embeddings_num = embeddings_num
+        self.num_embeddings = num_embeddings
         self.commitement_cost = commitement_cost
         self.H, self.W,  self.C  = input_shape
 
@@ -126,10 +138,10 @@ class VQVAE(baseVAE):
             )
           )
         
-        for _ in range(3): 
-            modules.append(
-                ResidualBlock(filters= 64, name = 'encoder_resblock' + str(_))
-            )
+        #for _ in range(3): 
+        #    modules.append(
+        #        ResidualBlock(filters= 64, name = 'encoder_resblock' + str(_))
+        #    )
         
 
         modules.append(
@@ -149,7 +161,7 @@ class VQVAE(baseVAE):
         self.last_layer_encoder_w = int(self.W/ (2**len(self.hidden_dims)))
 
         self.vq_layer = VectorQuantizer(embedding_dim=self.latent_dim,
-                                        num_embeddings=self.embeddings_num,
+                                        num_embeddings=self.num_embeddings,
                                         commitment_cost=self.commitement_cost)
         
 
@@ -157,7 +169,7 @@ class VQVAE(baseVAE):
         #decoder network 
 
         self.decoder_input = layers.Dense(
-                            units=self.hidden_dims[-1]*(self. last_layer_encoder_w**2))
+                            units=64*(self. last_layer_encoder_w**2), activation='relu')
 
         hidden_dims.reverse()
         modules = []
@@ -177,12 +189,10 @@ class VQVAE(baseVAE):
             )
 
 
-        kernel_out_decoder = (1,5)[len(self.hidden_dims)>2]
-
         modules.append(
             tf.keras.Sequential(
             layers = [
-                layers.Conv2DTranspose(filters=input_shape[2], kernel_size= kernel_out_decoder, strides=1, padding='valid', activation="sigmoid")
+                layers.Conv2DTranspose(filters=input_shape[2], kernel_size= 3, strides=1, padding='same', activation="sigmoid")
             ]
             )
         )   
@@ -201,18 +211,15 @@ class VQVAE(baseVAE):
         
         reconstruction , Z_e, vq_loss = self(inputs)
         
-        reconstruction_loss = tf.reduce_mean(
-          tf.reduce_sum( tf.keras.losses.binary_crossentropy(inputs, reconstruction),
-                        axis = (1,2))
-            ) 
+        reconstruction_loss = tf.reduce_mean((inputs - reconstruction) ** 2) 
 
-        total_loss = reconstruction_loss + self.beta * tf.reduce_mean(vq_loss)
+        total_loss = reconstruction_loss + tf.reduce_sum(vq_loss)
 
         return total_loss, reconstruction_loss, vq_loss
 
-    def encode(self, input: tf.Tensor) -> tf.Tensor:
+    def encode(self, inputs: tf.Tensor) -> tf.Tensor:
         
-        x = self.encoder(input)
+        x = self.encoder(inputs)
         Z_e = self.encoder_output(x)
         
         return Z_e
@@ -223,7 +230,7 @@ class VQVAE(baseVAE):
 
         x = self.decoder_input(Z_q)
         # reshape the decoder input to match the shape of input to conv2transpose 
-        x = layers.Reshape((w,w, self.hidden_dims[-1]))(x)
+        x = layers.Reshape((w,w, 64))(x)
 
         x = self.decoder(x)
 

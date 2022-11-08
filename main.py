@@ -17,34 +17,27 @@ def normalize_img(image, label):
 def main(): 
     
     
-    batch_size = 128 
-    latent_dim = 7
-    models = ['vanilla_VAE', 'beta_VAE', 'VQ_VAE','VAE_GAN']
-    # loading train and test datasets 
+  batch_size = 128 
+  latent_dim = 16
+  models = ['vanilla_VAE', 'beta_VAE', 'VQ_VAE','VAE_GAN']
+  # loading train and test datasets 
+  (x_train, _), (x_test, _) = tf.keras.datasets.mnist.load_data()
+  X = np.concatenate([x_train, x_test], axis=0)
+  X = np.expand_dims(X, -1).astype("float32") / 255
 
-    (x_train, _), (_, _) = tf.keras.datasets.mnist.load_data()
-    X = np.concatenate([x_train], axis = 0)
-    X = np.expand_dims(X,-1).astype('float32') / 255
-
-    vae = VQVAE(input_shape=(28,28,1),
+  vae = VQVAE(input_shape=(28,28,1),
                 hidden_dims=[32,64],
                 latent_dim=latent_dim,
-                embeddings_num=10,
-                commitement_cost=0.5,
-                beta = 0.2)
+                num_embeddings=128,
+                commitement_cost=0.25)
     #vae = VanillaVAE(input_shape=(28,28,1), hidden_dims=[32,64], latent_dim=8)
 
-    vae.compile(optimizer=keras.optimizers.Adam(), run_eagerly=True)
+  vae.compile(optimizer=keras.optimizers.Adam(), run_eagerly=True)
 
-    x_ = tf.random.normal((16, 28, 28, 1))
-    print(x_)
-    vae(x_) 
-    print(vae.decoder.summary())
-    print(vae.encoder.summary())
-    vae.fit(X, epochs=30, batch_size=batch_size)
+  vae.fit(X, epochs=30, batch_size=batch_size)
 
     
-    vae.save("./save_trained_models/VQVAE")
+  vae.save("./save_trained_models/VQVAE")
 
 
 

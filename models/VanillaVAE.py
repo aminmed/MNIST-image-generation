@@ -11,7 +11,7 @@ class VanillaVAE(baseVAE) :
                input_shape : Tuple,
                hidden_dims : List,
                latent_dim : int,
-               
+               beta : int = 1 , 
                **kwargs ) -> None:
 
     super(VanillaVAE, self).__init__()
@@ -60,7 +60,7 @@ class VanillaVAE(baseVAE) :
 
     #decoder network 
 
-    self.decoder_input = layers.Dense(units=self.hidden_dims[-1]*(self.last_layer_encoder_w**2))
+    self.decoder_input = layers.Dense(units=64*(self.last_layer_encoder_w**2), activation = 'relu')
 
     hidden_dims.reverse()
     modules = []
@@ -78,18 +78,17 @@ class VanillaVAE(baseVAE) :
       )
 
 
-    kernel_out_decoder = (1,5)[len(self.hidden_dims)>2]
     modules.append(
       tf.keras.Sequential(
         layers = [
-          layers.Conv2DTranspose(filters=input_shape[2], kernel_size= kernel_out_decoder, strides=1, padding='valid', activation="sigmoid")
+          layers.Conv2DTranspose(filters=input_shape[2], kernel_size= 1, padding='same', activation="sigmoid")
         ]
       )
     )   
 
     self.decoder = tf.keras.Sequential(layers = modules, name = 'decoder')  
 
-  def encode(self, input : tf.Tensor)-> Tuple[tf.Tensor]:
+  def encode(self, input : tf.Tensor)-> List[tf.Tensor]:
       
     x = self.encoder(input)
     mu , var = self.mean_out(x), self.var_out(x)
@@ -104,7 +103,7 @@ class VanillaVAE(baseVAE) :
     x = self.decoder_input(z)
     # reshape the decoder input to match the shape of input to conv2transpose
     
-    x = layers.Reshape((w,w, self.hidden_dims[-1]))(x)
+    x = layers.Reshape((w,w, 64))(x)
 
     x = self.decoder(x)
 
@@ -125,9 +124,9 @@ class VanillaVAE(baseVAE) :
 
     return z
 
-  def call(self, input : tf.Tensor, **kwargs): 
+  def call(self, inputs : tf.Tensor, **kwargs): 
     
-    z_mean, z_log_var = self.encode(input=input)
+    z_mean, z_log_var = self.encode(input=inputs)
     z = self.reparametrize(z_mean, z_log_var)
 
     return (self.decode(z), z_mean, z_log_var)
@@ -141,7 +140,7 @@ class VanillaVAE(baseVAE) :
       )
       kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)) 
 
-      total_loss = reconstruction_loss + tf.reduce_mean(kl_loss)
+      total_loss = reconstruction_loss + self.beta * tf.reduce_mean(kl_loss)
 
       return  total_loss, reconstruction_loss, kl_loss
   
