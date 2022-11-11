@@ -142,21 +142,15 @@ class VQVAE(baseVAE):
         #    modules.append(
         #        ResidualBlock(filters= 64, name = 'encoder_resblock' + str(_))
         #    )
-        
 
-        modules.append(
-          tf.keras.Sequential(
-              layers = [
-                layers.Flatten(), 
-                layers.Dense(units=hidden_dims[-1]),
-                layers.LeakyReLU()
-              ],
-              name = 'encoder_module_dense_layer')
-        )
     
     
         self.encoder = tf.keras.Sequential(layers = modules, name = 'encoder')  
-        self.encoder_output = layers.Dense(units=self.latent_dim, activation='relu')
+        
+        self.encoder_output = layers.Conv2D(filters = self.latent_dim,
+                                            kernel_size = 1,
+                                            padding='same')
+
 
         self.last_layer_encoder_w = int(self.W/ (2**len(self.hidden_dims)))
 

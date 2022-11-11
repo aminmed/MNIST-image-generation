@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow_probability as tfp 
 from tensorflow import keras as keras
 from keras import layers 
 import numpy as np
@@ -112,6 +113,28 @@ class PixelCNN(keras.Model):
         x = self.modules(x)
 
         return x
+
+
+
+class SamplerPixel(keras.Model):
+
+    def __init__(self, pixel_cnn_model) -> None:
+        super(SamplerPixel , self).__init__()
+
+        self.pixel_cnn_model = pixel_cnn_model
+        self.categorical_layer = tfp.layers.DistributionLambda(tfp.distributions.Categorical)
+
+    
+    def call(self, inputs : tf.Tensor, **kwargs):
+        
+        x = self.pixel_cnn_model(inputs, training = False)
+        x =self.categorical_layer(x)
+
+        return x 
+    
+
+    
+
     
     
 
