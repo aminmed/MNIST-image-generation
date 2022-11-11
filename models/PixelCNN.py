@@ -64,7 +64,7 @@ class PixelCNN(keras.Model):
         super().__init__()
         
         self.num_embeddings = num_embeddings
-
+        self.input_shape = input_shape
         self.inputs = keras.Input(shape = input_shape)
         
         self.pixelConv_A = PixelConvLayer(

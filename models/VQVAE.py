@@ -1,106 +1,11 @@
 from copy import deepcopy
+from typing import *
 import tensorflow as tf
 from tensorflow import keras as keras 
 from keras import layers 
-from typing import *
 from models.base import *
-
-class VectorQuantizer(layers.Layer): 
-    """
-    Reference : https://github.com/deepmind/sonnet/blob/v2/sonnet/src/nets/vqvae.py
-    """
-    def __init__(self, embedding_dim : int ,
-                 num_embeddings: int,
-                 commitment_cost: float) -> None:
-        
-        super(VectorQuantizer,self).__init__(name = "vector_quantizer")
-
-        self.embedding_dim = embedding_dim
-        self.num_embeddings = num_embeddings
-        self.commitment_cost = commitment_cost
-        embedding_shape = (embedding_dim, num_embeddings) 
-        initializer = tf.random_uniform_initializer()
-        self.embeddings = tf.Variable(
-            initial_value = initializer(shape= embedding_shape, dtype = tf.float32), 
-            trainable=True,
-            name="embeddings")
-
-
-    def __call__(self, z_latents) -> Any:
-        
-        z_latents_shape = tf.shape(z_latents)
-
-        flattened_z_latents = tf.reshape(z_latents, [-1, self.embedding_dim]) # [Batch_size * ]
-
-        embedding_sqr = tf.reduce_sum(self.embeddings**2, 0, keepdims=True)
-        inputs_sqr = tf.reduce_sum(flattened_z_latents**2, 1, keepdims=True)
-        
-        distances = ( # (z(x) - embeddings)^2 
-                inputs_sqr- 2 * tf.matmul(flattened_z_latents, self.embeddings)\
-                +embedding_sqr
-            )  
-        
-        encoding_indices = tf.argmax(-distances, axis=1)
-
-        encodings_one_hot = tf.one_hot(encoding_indices,
-                               self.num_embeddings,
-                               dtype=distances.dtype
-                               )
-
-        reshaped_embeddings = tf.transpose(self.embeddings, [1, 0])
-
-        quantized_latents = tf.matmul(encodings_one_hot, reshaped_embeddings) 
-        
-        quantized_latents = tf.reshape(quantized_latents, z_latents_shape)
-
-        commitement_loss  = tf.reduce_mean((tf.stop_gradient(quantized_latents) - z_latents)**2)
-        embedding_loss    = tf.reduce_mean((tf.stop_gradient(z_latents) - quantized_latents)**2)
-    
-        vq_loss = embedding_loss + self.commitment_cost * commitement_loss
-        #straight-through estimation
-        quantized_latents = z_latents + tf.stop_gradient(quantized_latents - z_latents)
-        
-        return quantized_latents, vq_loss
-    
-    def get_codebook_indices(self, flattened_inputs):
-        
-        embedding_sqr = tf.reduce_sum(self.embeddings**2, 0, keepdims=True)
-        inputs_sqr    = tf.reduce_sum(flattened_inputs**2, 1, keepdims=True)
-        
-        distances = ( # (z(x) - embeddings)^2 
-                inputs_sqr-2 * tf.matmul(flattened_inputs, self.embeddings)\
-                +embedding_sqr
-            )  
-        
-        encoding_indices = tf.argmax(-distances, axis=1)
-
-        return encoding_indices
-
-
-class ResidualBlock(layers.Layer) : 
-
-    def __init__(self,filters, name = '', **kwargs):
-        super(ResidualBlock, self).__init__(**kwargs)
-
-        self.resblock=tf.keras.Sequential(
-            layers = [
-                layers.Conv2D(filters=filters, 
-                              kernel_size=3,padding='same',
-                              use_bias=False), 
-                layers.ReLU(True),
-                layers.Conv2D(filters=filters, 
-                              kernel_size=3,
-                              padding='same',
-                              use_bias=False)
-
-            ],
-            name = name
-        )
-
-    def call(self, inputs, **kwargs):
-        return inputs + self.resblock(inputs)
-
-
+from models.VectorQuantizers import *
+from models.PixelCNN import *  
 
 class VQVAE(baseVAE): 
     
@@ -118,6 +23,11 @@ class VQVAE(baseVAE):
         self.num_embeddings = num_embeddings
         self.commitement_cost = commitement_cost
         self.H, self.W,  self.C  = input_shape
+
+        # pixel cnn model and sampler 
+
+        self.pixel_cnn = None
+        self.sampler = None 
 
         self.total_loss_tracker = tf.keras.metrics.Mean(name = 'total_loss')
         self.reconstruction_loss_tracker = tf.keras.metrics.Mean(name = 'reconstruction_loss')
@@ -152,7 +62,6 @@ class VQVAE(baseVAE):
                                             padding='same')
 
 
-        self.last_layer_encoder_w = int(self.W/ (2**len(self.hidden_dims)))
 
         self.vq_layer = VectorQuantizer(embedding_dim=self.latent_dim,
                                         num_embeddings=self.num_embeddings,
@@ -162,8 +71,6 @@ class VQVAE(baseVAE):
 
         #decoder network 
 
-        self.decoder_input = layers.Dense(
-                            units=64*(self. last_layer_encoder_w**2), activation='relu')
 
         hidden_dims.reverse()
         modules = []
@@ -190,6 +97,12 @@ class VQVAE(baseVAE):
             ]
             )
         )   
+
+        modules.append(
+            layers.Resizing(
+                height=input_shape[1], width = input_shape[2], interpolation="bilinear", crop_to_aspect_ratio=False
+                )
+        )
 
         self.decoder = tf.keras.Sequential(layers = modules, name = 'decoder')  
 
@@ -219,16 +132,49 @@ class VQVAE(baseVAE):
         return Z_e
     
     def decode(self, Z_q: tf.Tensor) -> Any:
-        
-        w = self.last_layer_encoder_w
-
-        x = self.decoder_input(Z_q)
-        # reshape the decoder input to match the shape of input to conv2transpose 
-        x = layers.Reshape((w,w, 64))(x)
 
         x = self.decoder(x)
 
         return x
+    
+    def train_pixel_cnn(self, X_train : tf.Tensor,
+                        epochs = 30,
+                        num_residual_blocks=2,
+                        num_pixelcnn_blocks = 2,
+                        filters = 128):
+        
+        pixel_input_shape = (7,7) # not well generalized , should be written using encoder output shape 
+        self.pixel_cnn = PixelCNN(input_shape=pixel_input_shape,
+                                  num_residual_blocks=num_residual_blocks, 
+                                  num_pixelcnn_blocks=num_pixelcnn_blocks,
+                                  filters= filters, 
+                                  num_embeddings=self.num_embeddings)
+        
+        # preprocess data to train pixelcnn 
+        print("##### train_PixelCNN : data preparation ")
+        encoded_data = self.encode(X_train).numpy()
+        flattened_data = encoded_data.reshape(-1, encoded_data.shape[-1])
+        codebook_indices = self.vq_layer.get_codebook_indices(flattened_data)
+        codebook_indices = codebook_indices.numpy().reshape((-1,pixel_input_shape))
+        print("##### train_PixelCNN : training")
+        self.pixel_cnn.compile(
+            optimizer=keras.optimizers.Adam(1e-3),
+            loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+            metrics=["accuracy"],
+        )
+        
+        self.pixel_cnn.fit(
+            x=codebook_indices,
+            y=codebook_indices,
+            batch_size=128,
+            epochs=epochs,
+            validation_split=0.1,
+        )
+        print("##### train_PixelCNN : training completed successfully sampler creation ")
+
+        self.sampler = SamplerPixel(pixel_cnn_model = self.pixel_cnn)
+
+        return True
 
     @property
     def metrics(self) : 
@@ -248,7 +194,27 @@ class VQVAE(baseVAE):
               'vq_loss': self.vq_loss_tracker.result()} 
 
     def sample(self, num_samples: int, **kwargs):
-        pass
+        
+        if self.sampler is None : 
+            raise TypeError("Sampler is none, you should train pixelcnn model first")
+            return 
+        
+        priors = np.zeros( (num_samples,  ) +self.pixel_cnn.input_shape, dtype = np.int32)
+
+        rows, cols = self.pixel_cnn.input_shape
+
+        for row in range(rows) : 
+            for col in range(cols):
+                probs= self.sampler.pridect(priors)
+                priors[:,row,col] = probs[:,row, col]
+
+        # retrieve quantized vectors correspending to each integer in priors
+
+        quantized = self.vq_layer.get_quantized(priors)
+        return self.decode(quantized)
+         
+
+
 
     def generate(self, x: tf.Tensor, **kwargs) -> tf.Tensor:
         return self(x)[0]
