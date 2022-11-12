@@ -1,11 +1,14 @@
 from copy import deepcopy
 from typing import *
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras as keras 
 from keras import layers 
 from models.base import *
-from models.VectorQuantizers import *
-from models.PixelCNN import *  
+from models.PixelCNN import PixelCNN, SamplerPixel
+from models.VectorQuantizers import VectorQuantizer
+
+
 
 class VQVAE(baseVAE): 
     
@@ -48,10 +51,10 @@ class VQVAE(baseVAE):
             )
           )
         
-        #for _ in range(3): 
-        #    modules.append(
-        #        ResidualBlock(filters= 64, name = 'encoder_resblock' + str(_))
-        #    )
+        for _ in range(3): 
+            modules.append(
+                ResidualBlock(filters= hidden_dims[-1], name = 'encoder_resblock' + str(_))
+            )
 
     
     
@@ -93,16 +96,16 @@ class VQVAE(baseVAE):
         modules.append(
             tf.keras.Sequential(
             layers = [
-                layers.Conv2DTranspose(filters=input_shape[2], kernel_size= 3, strides=1, padding='same', activation="sigmoid")
+                layers.Conv2DTranspose(filters=input_shape[2], kernel_size= 1, padding='same', activation="sigmoid")
             ]
             )
         )   
 
-        modules.append(
-            layers.Resizing(
-                height=input_shape[1], width = input_shape[2], interpolation="bilinear", crop_to_aspect_ratio=False
-                )
-        )
+        #modules.append(
+        #    layers.Resizing(
+        #        height=input_shape[1], width = input_shape[2], interpolation="bilinear", crop_to_aspect_ratio=False
+        #        )
+        #)
 
         self.decoder = tf.keras.Sequential(layers = modules, name = 'decoder')  
 
@@ -133,7 +136,7 @@ class VQVAE(baseVAE):
     
     def decode(self, Z_q: tf.Tensor) -> Any:
 
-        x = self.decoder(x)
+        x = self.decoder(Z_q)
 
         return x
     
@@ -155,7 +158,7 @@ class VQVAE(baseVAE):
         encoded_data = self.encode(X_train).numpy()
         flattened_data = encoded_data.reshape(-1, encoded_data.shape[-1])
         codebook_indices = self.vq_layer.get_codebook_indices(flattened_data)
-        codebook_indices = codebook_indices.numpy().reshape((-1,pixel_input_shape))
+        codebook_indices = codebook_indices.numpy().reshape((-1,) + pixel_input_shape)
         print("##### train_PixelCNN : training")
         self.pixel_cnn.compile(
             optimizer=keras.optimizers.Adam(1e-3),
@@ -168,7 +171,7 @@ class VQVAE(baseVAE):
             y=codebook_indices,
             batch_size=128,
             epochs=epochs,
-            validation_split=0.1,
+            validation_split=0.3,
         )
         print("##### train_PixelCNN : training completed successfully sampler creation ")
 
@@ -199,19 +202,17 @@ class VQVAE(baseVAE):
             raise TypeError("Sampler is none, you should train pixelcnn model first")
             return 
         
-        priors = np.zeros( (num_samples,  ) +self.pixel_cnn.input_shape, dtype = np.int32)
+        priors = np.zeros( (num_samples,  ) +self.pixel_cnn.pixel_input_shape, dtype = np.int32)
 
-        rows, cols = self.pixel_cnn.input_shape
-
+        rows, cols = self.pixel_cnn.pixel_input_shape
         for row in range(rows) : 
             for col in range(cols):
-                probs= self.sampler.pridect(priors)
+                probs= self.sampler.predict(priors)
                 priors[:,row,col] = probs[:,row, col]
-
         # retrieve quantized vectors correspending to each integer in priors
 
         quantized = self.vq_layer.get_quantized(priors)
-        return self.decode(quantized)
+        return self.decode(quantized), priors
          
 
 

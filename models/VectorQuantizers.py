@@ -77,11 +77,11 @@ class VectorQuantizer(layers.Layer):
     
     def get_quantized(self, priors): 
 
-        priors_onehot = tf.one_hot(priors.astype('int32'), self.embeddings ).numpy()
+        priors_onehot = tf.one_hot(priors.astype('int32'), self.num_embeddings ).numpy()
         quantized = tf.matmul(
             priors_onehot.astype("float32"), self.embeddings, transpose_b=True
         )
-        quantized = tf.reshape(quantized, (-1,(tf.shape(self.embeddings)[1:-1])))
+        quantized = tf.reshape(quantized, (-1,*(priors.shape[1:]),self.embedding_dim))
 
         return quantized 
 

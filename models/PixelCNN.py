@@ -29,9 +29,9 @@ class PixelConvLayer(layers.Layer):
         self.conv.kernel.assign(self.conv.kernel * self.mask)
         return self.conv(inputs)
 
-class ResidualBlock(keras.layers.Layer):
+class PixelResidualBlock(keras.layers.Layer):
     def __init__(self, filters, **kwargs):
-        super(ResidualBlock, self).__init__(**kwargs)
+        super(PixelResidualBlock, self).__init__(**kwargs)
         self.conv1 = keras.layers.Conv2D(
             filters=filters, kernel_size=1, activation="relu"
         )
@@ -64,7 +64,7 @@ class PixelCNN(keras.Model):
         super().__init__()
         
         self.num_embeddings = num_embeddings
-        self.input_shape = input_shape
+        self.pixel_input_shape = input_shape
         self.inputs = keras.Input(shape = input_shape)
         
         self.pixelConv_A = PixelConvLayer(
@@ -78,7 +78,7 @@ class PixelCNN(keras.Model):
         modules = []
         for i in range(num_residual_blocks):
             modules.append(
-                ResidualBlock(filters=filters)
+                PixelResidualBlock(filters=filters)
             )
 
         for i in range(num_pixelcnn_blocks):
@@ -100,13 +100,9 @@ class PixelCNN(keras.Model):
         self.modules = tf.keras.Sequential(layers = modules, name = 'core_module')
         
 
-
-        
-
-
     def call(self, inputs : tf.Tensor, **kwargs):
         
-        x = self.inputs(inputs)
+        x = inputs
         x = tf.one_hot(x, self.num_embeddings)
         x = self.pixelConv_A(x)
 
