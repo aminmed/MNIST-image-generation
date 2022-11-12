@@ -1,4 +1,5 @@
 from copy import deepcopy
+import numpy as np 
 import tensorflow as tf
 from tensorflow import keras as keras 
 from keras import layers 
@@ -17,7 +18,7 @@ class VanillaVAE(baseVAE) :
     super(VanillaVAE, self).__init__()
 
     self.latent_dim = latent_dim
-
+    self.beta = beta 
 
     self.H, self.W,  self.C  = input_shape
     self.hidden_dims = deepcopy(hidden_dims)
@@ -172,3 +173,17 @@ class VanillaVAE(baseVAE) :
       return {'total_loss' : self.total_loss_tracker.result(),\
               'reconstruction_loss': self.reconstruction_loss_tracker.result(),\
               'kl_loss': self.kl_loss_tracker.result()} 
+  
+
+  def sample_linspace(self, num_samples) : 
+    
+    samples = []
+    grid_x = np.linspace(-1, 1, num_samples)
+    grid_y = np.linspace(-1, 1, num_samples)[::-1]
+    for i, yi in enumerate(grid_y):
+      for j, xi in enumerate(grid_x):
+          z_sample = np.array([[xi, yi]])
+          sample = self.decode(z_sample)
+          samples.append(sample.numpy())
+    
+    return np.array(samples)
