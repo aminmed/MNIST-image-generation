@@ -1,3 +1,4 @@
+
 from copy import deepcopy
 import numpy as np 
 import tensorflow as tf
@@ -54,8 +55,8 @@ class VanillaVAE(baseVAE) :
     
     
     self.encoder = tf.keras.Sequential(layers = modules, name = 'encoder')  
-    self.mean_out = layers.Dense(units=self.latent_dim, activation='relu')
-    self.var_out = layers.Dense(units=self.latent_dim, activation='relu')
+    self.mean_out = layers.Dense(units=self.latent_dim)
+    self.var_out = layers.Dense(units=self.latent_dim)
 
     self.last_layer_encoder_w = int(self.W/ (2**len(self.hidden_dims)))
 
@@ -175,11 +176,11 @@ class VanillaVAE(baseVAE) :
               'kl_loss': self.kl_loss_tracker.result()} 
   
 
-  def sample_linspace(self, num_samples) : 
+  def sample_linspace(self, num_samples, r = 1) : 
     
     samples = []
-    grid_x = np.linspace(-1, 1, num_samples)
-    grid_y = np.linspace(-1, 1, num_samples)[::-1]
+    grid_x = np.linspace(-r, r, num_samples)
+    grid_y = np.linspace(-r, r, num_samples)[::-1]
     for i, yi in enumerate(grid_y):
       for j, xi in enumerate(grid_x):
           z_sample = np.array([[xi, yi]])

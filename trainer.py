@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import math
 # ignore all tensorflow INFO/WARNINGS 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  
 from tqdm import tqdm, trange
@@ -9,18 +10,20 @@ import tensorflow as tf
 from models.VanillaVAE import VanillaVAE
 from models.VQVAE import VQVAE
 
-SAMPLES_GENERATED_PER_EPOCH = 10 
+SAMPLES_GENERATED_PER_EPOCH = 5
 
 def store_sampled_images(samples, path_to_save = './train_samples/') : 
   digit_size = 28
-  n = len(samples)
+  n = int(math.sqrt(len(samples)))
+
   samples = samples.squeeze()
+  print(samples.shape)
   figure = np.zeros((digit_size * n, digit_size * n))
   grid_x = np.linspace(-1, 1, n)
   grid_y = np.linspace(-1, 1, n)[::-1]
   for i, _ in enumerate(grid_y):
     for j, _ in enumerate(grid_x): 
-      sample = samples[i]
+      sample = samples[i * n + j]
       figure[i * digit_size : (i + 1) * digit_size, j * digit_size : (j + 1) * digit_size,] = sample
 
   plt.figure(figsize=(15, 15))
@@ -35,7 +38,7 @@ def store_sampled_images(samples, path_to_save = './train_samples/') :
 
 
 if __name__ == '__main__':
-    print("okey")
+  
     parser = argparse.ArgumentParser(description='Train variational autoencoder')
     parser.add_argument('--model',default='VQVAE',const='VQVAE',nargs='?',
                         choices=['vanillaVAE', 'betaVAE', 'VQVAE'],
@@ -74,7 +77,7 @@ if __name__ == '__main__':
     input_shape = (28,28,1)
 
     X = np.expand_dims(x_train, -1).astype("float32") / 255.0
-
+    X = X[:15000]
     print('Train dataset loaded...')
   
     print('Model Loading...')
@@ -118,9 +121,9 @@ if __name__ == '__main__':
       print(f"EPOCH {epoch+1} / {args.epochs}")
       model.fit(X, epochs = 1, batch_size= args.batch_size)
       if args.model != 'VQVAE':
-        samples = model.sample_linspace(num_samples = SAMPLES_GENERATED_PER_EPOCH)
+        samples = model.sample_linspace(num_samples = SAMPLES_GENERATED_PER_EPOCH**2)
       else : 
-        samples, priors = model.sample(num_samples = SAMPLES_GENERATED_PER_EPOCH)
+        samples, priors = model.sample(num_samples = SAMPLES_GENERATED_PER_EPOCH**2)
         
       path_to_save_image = "./train_samples/"+ args.model + "_EPOCH_" + str(epoch)+ ".png"
       store_sampled_images(samples,path_to_save_image)
