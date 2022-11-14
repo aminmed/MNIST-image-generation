@@ -45,6 +45,7 @@ if __name__ == '__main__':
         samples = model.sample(args.num_samples)
     
     if args.metric == "IS" : 
+        
         samples = samples.reshape((-1,28,28,1))
         is_score = get_inception_score(samples, splits= 10)
         print(f"Inception score for given model is {is_score}")

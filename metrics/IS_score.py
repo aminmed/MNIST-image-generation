@@ -1,59 +1,40 @@
-'''
-From https://github.com/tsc2017/Inception-Score
-Code derived from https://github.com/openai/improved-gan/blob/master/inception_score/model.py and https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/gan/python/eval/python/classifier_metrics_impl.py
-Usage:
-    Call get_inception_score(images, splits=10)
-Args:
-    images: A numpy array with values ranging from 0 to 255 and shape in the form [N, 3, HEIGHT, WIDTH] where N, HEIGHT and WIDTH can be arbitrary. A dtype of np.uint8 is recommended to save CPU memory.
-    splits: The number of splits of the images, default is 10.
-Returns:
-    Mean and standard deviation of the Inception Score across the splits.
-'''
-
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
-import tensorflow_gan as tfgan
-import os
-import functools
+import os,sys
+import imageio
 import numpy as np
-import time
-from tensorflow.python.ops import array_ops
-# pip install tensorflow-gan
-import tensorflow_gan as tfgan
-session=tf.compat.v1.InteractiveSession()
-# A smaller BATCH_SIZE reduces GPU memory usage, but at the cost of a slight slowdown
-BATCH_SIZE = 64
-INCEPTION_TFHUB = 'https://tfhub.dev/tensorflow/tfgan/eval/inception/1'
-INCEPTION_OUTPUT = 'logits'
+import argparse
+import math
+from model import ResNet18
+import torchvision.transforms as transforms
+import torch
+import cv2 as cv
+import glob as glob
+from numpy import clip
 
-# Run images through Inception.
-inception_images = tf.compat.v1.placeholder(tf.float32, [None, 3, None, None], name = 'inception_images')
-def inception_logits(images = inception_images, num_splits = 1):
-    images = tf.transpose(images, [0, 2, 3, 1])
-    size = 299
-    images = tf.compat.v1.image.resize_bilinear(images, [size, size])
-    generated_images_list = array_ops.split(images, num_or_size_splits = num_splits)
-    logits = tf.map_fn(
-        fn = tfgan.eval.classifier_fn_from_tfhub(INCEPTION_TFHUB, INCEPTION_OUTPUT, True),
-        elems = array_ops.stack(generated_images_list),
-        parallel_iterations = 8,
-        back_prop = False,
-        swap_memory = True,
-        name = 'RunClassifier')
-    logits = array_ops.concat(array_ops.unstack(logits), 0)
-    return logits
+GPUID = 0
+os.environ["CUDA_VISIBLE_DEVICES"] = str(GPUID)
+print ("PACKAGES LOADED")
 
-logits=inception_logits()
+def load_images(args, image_dir):
+    images = []
+    for fn in os.listdir(image_dir):
+        ext = os.path.splitext(fn)[1].lower()
+        img_path = os.path.join(image_dir, fn)
+        img = imageio.imread(img_path)
+        # calculate per-channel means and standard deviations
+        means = img.mean(axis=(0, 1), dtype='float64')
+        stds = img.std(axis=(0, 1), dtype='float64')
+        # per-channel standardization of pixels
+        pixels = (img - means) / stds
+        pixels = clip(pixels, -1.0, 1.0)
+        images.append(pixels)
+    return images
 
-def get_inception_probs(inps):
-    session=tf.get_default_session()
-    n_batches = int(np.ceil(float(inps.shape[0]) / BATCH_SIZE))
-    preds = np.zeros([inps.shape[0], 1000], dtype = np.float32)
-    for i in range(n_batches):
-        inp = inps[i * BATCH_SIZE:(i + 1) * BATCH_SIZE] / 255. * 2 - 1
-        preds[i * BATCH_SIZE : i * BATCH_SIZE + min(BATCH_SIZE, inp.shape[0])] = session.run(logits,{inception_images: inp})[:, :1000]
-    preds = np.exp(preds) / np.sum(np.exp(preds), 1, keepdims=True)
-    return preds
+
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / np.expand_dims(e_x.sum(axis=1), axis=1)   # only difference
+
 
 def preds2score(preds, splits=10):
     scores = []
@@ -64,14 +45,89 @@ def preds2score(preds, splits=10):
         scores.append(np.exp(kl))
     return np.mean(scores), np.std(scores)
 
-def get_inception_score(images, splits=10):
-    assert(type(images) == np.ndarray)
-    assert(len(images.shape) == 4)
-    assert(images.shape[1] == 3)
-    assert(np.min(images[0]) >= 0 and np.max(images[0]) > 10), 'Image values should be in the range [0, 255]'
-    print('Calculating Inception Score with %i images in %i splits' % (images.shape[0], splits))
-    start_time=time.time()
-    preds = get_inception_probs(images)
-    mean, std = preds2score(preds, splits)
-    print('Inception Score calculation time: %f s' % (time.time() - start_time))
-    return mean, std  # Reference values: 11.38 for 50000 CIFAR-10 training set images, or mean=11.31, std=0.10 if in 10 splits.
+def get_inception_score(args, images):
+    splits = args.num_splits
+    inps = []
+    input_transform = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    for img in images:
+        img = img.astype(np.float32)
+        inps.append(np.expand_dims(img, 0))
+    preds = []
+    n_batches = int(math.ceil(float(len(inps)) / float(args.batch_size)))
+    n_preds = 0
+
+    net = ResNet18().cuda()
+    net.load_state_dict(torch.load(args.model_dir))
+    print("load model successfully")
+
+    for i in range(n_batches):
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        inp = inps[(i * args.batch_size):min((i + 1) * args.batch_size, len(inps))]
+        inp = np.concatenate(inp, 0)
+        inp = np.expand_dims(inp, axis=1)
+        inp = torch.from_numpy(inp).cuda()
+        outputs = net(inp)
+        pred = outputs.data.tolist()
+        #pred = softmax(pred)
+        preds.append(pred)
+        n_preds += outputs.shape[0]
+    preds = np.concatenate(preds, 0)
+    preds = np.exp(preds) / np.sum(np.exp(preds), 1, keepdims=True)
+    mean_, std_ = preds2score(preds, splits)
+    return mean_, std_
+
+def main(args):
+  images = load_images(args, args.input_image_dir)
+  mean, std = get_inception_score(args, images)
+  print('\nInception mean: ', mean)
+  print('Inception std: ', std)
+
+
+def crop10x10(in_path, out_path):
+    # mnist
+    x_cors = [2,32,62,92,122,152,182,212,242,272]
+    y_cors = [2,32,62,92,122,152,182,212,242,272]
+    img_size = 28
+    number_channel = 1
+
+    print(out_path)
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
+    in_list = glob.glob(in_path + "*.png")
+    count = 0
+    for img_name in in_list:
+        count += 1
+        if (number_channel == 1):
+            img = cv.imread(img_name, 0)
+        else:
+            img = cv.imread(img_name, 1)
+        for x in x_cors:
+            for y in y_cors:
+                img_crop = img[x:x + img_size, y:y + img_size]
+                #print(img_crop.shape)
+                if (number_channel == 1):
+                    h, w = img_crop.shape
+                else:
+                    h, w, c = img_crop.shape
+                if (h != img_size) or (w != img_size):
+                    print("ERROR!!!")
+                    exit()
+
+                out_name = out_path + str(count) + "_" + str(x) + "_" + str(y) + ".png"
+                #print(out_name)
+                cv.imwrite(out_name, img_crop)
+
+if __name__ == '__main__':
+    in_path = "./data/"
+    out_path = in_path + "/crops/"
+    crop10x10(in_path, out_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input_image_dir', default=out_path)
+    parser.add_argument('--model_dir', default="checkpoints/mnist_model_10.ckpt")
+    parser.add_argument('--img_size', default=28)
+    parser.add_argument('--batch_size', default=100)
+    parser.add_argument('--channel', default=1)
+    parser.add_argument('--num_splits', default=10)
+    args = parser.parse_args()
+    main(args)

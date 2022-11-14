@@ -5,6 +5,8 @@ import seaborn as sns
 
 from models.VanillaVAE import * 
 from models.VQVAE import * 
+
+
 sns.set(rc={'figure.figsize':(11.7,8.27)})
 
 
