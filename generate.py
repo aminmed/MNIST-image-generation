@@ -13,7 +13,7 @@ from models.VanillaVAE import *
 def load_model():
     input_shape = (28,28,1)
     model_type = 'betaVAE'
-    checkpoint_path = "./models_checkpoints/betaVAE_latent_16_beta_50.h5"
+    checkpoint_path = "./models_checkpoints/betaVAE_latent_8_beta_10.h5"
 
     if model_type == 'VQVAE' : 
         model = VQVAE(input_shape=input_shape,
