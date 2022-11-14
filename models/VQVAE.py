@@ -142,8 +142,8 @@ class VQVAE(baseVAE):
     
     def train_pixel_cnn(self, X_train : tf.Tensor,
                         epochs = 30,
-                        num_residual_blocks=2,
-                        num_pixelcnn_blocks = 2,
+                        num_residual_blocks=3,
+                        num_pixelcnn_blocks =3,
                         filters = 128):
         
         pixel_input_shape = (7,7) # not well generalized , should be written using encoder output shape 
@@ -155,9 +155,12 @@ class VQVAE(baseVAE):
         
         # preprocess data to train pixelcnn 
         print("##### train_PixelCNN : data preparation ")
+        
         encoded_data = self.encode(X_train).numpy()
         flattened_data = encoded_data.reshape(-1, encoded_data.shape[-1])
+
         codebook_indices = self.vq_layer.get_codebook_indices(flattened_data)
+        
         codebook_indices = codebook_indices.numpy().reshape((-1,) + pixel_input_shape)
         print("##### train_PixelCNN : training")
         self.pixel_cnn.compile(
@@ -177,7 +180,19 @@ class VQVAE(baseVAE):
 
         self.sampler = SamplerPixel(pixel_cnn_model = self.pixel_cnn)
 
-        return True
+    
+    def load_weights_for_pixel_cnn(self, path) : 
+        pixel_input_shape = (7,7) # not well generalized , should be written using encoder output shape 
+        self.pixel_cnn = PixelCNN(input_shape=pixel_input_shape,
+                                  num_residual_blocks=2, 
+                                  num_pixelcnn_blocks=2,
+                                  filters= 128, 
+                                  num_embeddings=self.num_embeddings)
+        _x = np.random.randint(0, 2,  size=(1,7,7))
+        self.pixel_cnn(_x)
+        self.pixel_cnn.load_weights(path)
+        self.sampler = SamplerPixel(pixel_cnn_model = self.pixel_cnn)
+
 
     @property
     def metrics(self) : 
@@ -207,7 +222,7 @@ class VQVAE(baseVAE):
         rows, cols = self.pixel_cnn.pixel_input_shape
         for row in range(rows) : 
             for col in range(cols):
-                probs= self.sampler.predict(priors)
+                probs= self.sampler(priors)
                 priors[:,row,col] = probs[:,row, col]
         # retrieve quantized vectors correspending to each integer in priors
 

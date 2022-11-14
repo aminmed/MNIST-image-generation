@@ -1,0 +1,9 @@
+,category,method,is_mean,is_std
+0,betaVAE,latent_2_beta_10,6.5497,0.1052
+1,betaVAE,latent_8_beta_20,7.21184,0.0837
+2,betaVAE,latent_16_beta_10,7.3238,0.06052
+3,vanillaVAE,latent_2,7.40158,0.0819
+4,vanillaVAE,latent_8,6.6413,0.09138
+5,vanillaVAE,latent_16,5.32946,0.05
+6,VQVAE,latent_16_num_128,7.3224,0.17
+7,mnist_test,-,8.371,0.02
