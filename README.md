@@ -1,1 +1,2 @@
-# assignment2-22-may_vae
+# MNIST images generation using variants of VAE
+
